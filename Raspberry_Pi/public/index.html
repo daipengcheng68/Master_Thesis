@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html style="width:100%;height:100%;background:gray">
+
+<head>
+	<title></title>
+	<script type="text/javascript" src="./js/jquery-3.5.1.min.js"></script>
+	<script type="text/javascript" src="./js/methods.js"></script>
+	<script type="text/javascript" src="./js/pathfinding-browser.min.js"></script>
+
+	<style>
+		.floatBox {
+			position: relative;
+			font-size: large;
+			width: 60px;
+			text-align: center;
+		}
+	</style>
+</head>
+
+<body style="width:100%;height:100%;margin:0;overflow: hidden;" oncontextmenu="return false;">
+	<div style="width:100%;height:18%;left:0;top:0;margin:0;position: relative;left: 0;background-color: #CCCCFF;">
+		<div id="div2" style="width:100%;height:15%;left:0;top:0;margin:0;position: relative;left: 0;" >
+			<div>
+				<span class="floatBox" style="left: 0;top:20px;">width</span>
+				<span class="floatBox" style="left: 80px;top:20px;">height</span>
+			</div>
+	
+			<div>
+				<input id="input_width" type="number" class="floatBox" style="left: 0;top:20px;" value="7"></input>
+				<input id="input_height" type="number" class="floatBox" style="left: 52px;top:20px;" value="5"></input>
+				<button class="floatBox" style="left: 110px;top:20px;width: 100px;" onclick="SetMap()">Set Map</button>
+			</div>
+	
+			<div>
+				<span class="floatBox" style="left: 0;top:40px;">startdir</span>
+			</div>
+	
+			<div>
+				<select id="startdir" class="floatBox" style="left: 0;top:40px;">
+					<option value="0,-1">↑</option>
+					<option value="1,0" selected>→</option>
+					<option value="0,1">↓</option>
+					<option value="-1,0">←</option>
+				</select>
+				
+				<button class="floatBox" style="left: 190px;top:40px;width: 100px;background: red;border-radius: 23px;height: 50px;font-size: 25px;" onclick="Start()">Start</button>
+	
+			</div>
+	
+		</div>
+	</div>
+
+<!-- <hr style="position: relative;"> -->
+
+
+	<div id="div1" style="width:100%;height:50%;left:0;top:0;margin:0;position: relative;top:50px" >
+		<svg id="svgroot" height="100%" width="100%" y="500">
+		</svg>
+	</div>
+
+
+	<script>
+		const leftButton = 0;
+		const rightButton = 2;
+
+		const walkable = 0;
+		const unwalkable = 1;
+		const walked1 = 2;
+		const walked2 = 3;
+		const start = 4;
+		const middle = 5;
+		const end = 6;
+
+		const mix = 7;
+
+		const N = 0;
+		const E = 1;
+		const S = 2;
+		const W = 3;
+
+		const walkableColor = "white";
+		const unwalkableColor = "#333333";
+		const walked1Color = "#afeeee";
+		const walked2Color = "#A8B0ED";
+		const startColor = "#00dd00";
+		const middleColor = "#0000dd";
+		const endColor = "#ee4400";
+
+		const mixColor = "#FFFF00";
+
+		// const blockSize = 30;
+		const blockSize = 100;
+
+		function resize(){
+			let ox = (document.body.clientWidth -blockSize*7 )/2;
+			// console.log(ox);
+			$("#div1").css("left",ox);
+			$("#div2").css("left",ox);
+		}
+
+		window.onresize = resize;
+
+		class Point {
+			status = walkable;
+
+			constructor(_x, _y) {
+				this.x = _x;
+				this.y = _y;
+
+				let rect = CreateSVG('rect', { x: this.x * blockSize, y: this.y * blockSize, width: blockSize * 0.9, height: blockSize * 0.9, fill: walkableColor });
+				rect.belongClass = this;
+				this.rect = rect;
+
+				$("#svgroot").append(rect);
+			}
+
+			setStatus(_status) {
+				this.status = _status;
+
+				switch (this.status) {
+					case walkable:
+						$(this.rect).attr("fill", walkableColor);
+						break;
+					case unwalkable:
+						$(this.rect).attr("fill", unwalkableColor);
+						break;
+					case walked1:
+						$(this.rect).attr("fill", walked1Color);
+						break;
+					case walked2:
+						$(this.rect).attr("fill", walked2Color);
+						break;
+					case start:
+						$(this.rect).attr("fill", startColor);
+						map.startPoint = this;
+						break;
+					case middle:
+						$(this.rect).attr("fill", middleColor);
+						map.middlePoint = this;
+						break;
+					case end:
+						$(this.rect).attr("fill", endColor);
+						map.endPoint = this;
+						break;
+					case mix:
+						$(this.rect).attr("fill", mixColor);
+						map.endPoint = this;
+						break;
+				}
+			}
+		}
+
+		class Map {
+			bLeftPressed = false;
+			bRightPressed = false;
+
+			constructor() {
+
+
+				this.svgroot = $("#svgroot")[0];
+
+				this.svgroot.belongClass = this;
+				this.svgroot.addEventListener("mousedown", this.mousedown);
+				this.svgroot.addEventListener("mouseup", this.mouseup);
+				this.svgroot.addEventListener("mouseover", this.mouseover);
+			}
+
+			mousedown(e) {
+				if (e.button === leftButton) {
+					this.belongClass.bLeftPressed = true;
+					if (e.target.tagName === "rect") {
+						if (e.target.belongClass.status === start || e.target.belongClass.status === middle || e.target.belongClass.status === end || e.target.belongClass.status === mix) {
+							this.belongClass.grabPoint = e.target.belongClass;
+						}
+
+						if (e.target.belongClass.status != start && e.target.belongClass.status != middle && e.target.belongClass.status != end  && e.target.belongClass.status != mix) {
+							e.target.belongClass.setStatus(unwalkable);
+						}
+					}
+				} else if (e.button === rightButton) {
+					this.belongClass.bRightPressed = true;
+					if (e.target.tagName === "rect") {
+						if (e.target.belongClass.status != start && e.target.belongClass.status != middle&& e.target.belongClass.status != end) {
+							e.target.belongClass.setStatus(walkable);
+						}
+					}
+				}
+			}
+
+			mouseup(e) {
+				if (e.button === leftButton) {
+					this.belongClass.bLeftPressed = false;
+					if (this.belongClass.grabPoint) {
+						if (e.target.belongClass.status === walkable || e.target.belongClass.status === walked1|| e.target.belongClass.status === walked2) {
+							if(this.belongClass.grabPoint.status == mix){
+								e.target.belongClass.setStatus(end);
+								this.belongClass.grabPoint.setStatus(start);
+							}else{
+								e.target.belongClass.setStatus(this.belongClass.grabPoint.status);
+								this.belongClass.grabPoint.setStatus(walkable);
+							}
+							
+						}else if(this.belongClass.grabPoint.status == end &&  e.target.belongClass.status === start){
+							e.target.belongClass.setStatus(mix);
+							this.belongClass.grabPoint.setStatus(walkable);
+						}
+					}
+				} else if (e.button === rightButton) {
+					this.belongClass.bRightPressed = false;
+				}
+				this.belongClass.grabPoint = null;
+			}
+
+			mouseover(e) {
+				if (!this.belongClass.grabPoint && this.belongClass.bLeftPressed != this.belongClass.bRightPressed && e.target.tagName === "rect") {
+					if (e.target.belongClass.status != start && e.target.belongClass.status != end && e.target.belongClass.status != middle && e.target.belongClass.status != mix) {
+						if (this.belongClass.bLeftPressed === true) {
+							e.target.belongClass.setStatus(unwalkable);
+						} else if (this.belongClass.bRightPressed === true) {
+							e.target.belongClass.setStatus(walkable);
+						}
+					}
+				}
+			}
+
+			recreateMap(_row, _col) {
+				this.row = _row;
+				this.col = _col;
+
+				$("#svgroot").html("");
+				let row = new Array(_row);
+
+				for (let i = 0; i < _row; ++i) {
+					row[i] = new Array(_col);
+					for (let j = 0; j < _col; ++j) {
+						row[i][j] = new Point(j , i);
+					}
+				}
+
+				this.MapArr = row;
+
+				this.MapArr[0][0].setStatus(start);
+				this.MapArr[0][_col - 1].setStatus(middle);
+				this.MapArr[_row - 1][_col - 1].setStatus(end);
+				// console.log(this.MapArr);
+			}
+
+			showPathProcess(path,j, status) {
+				let that = this;
+				for (let i = 0; i < path.length; ++i) {
+					setTimeout(() => {
+						let point = that.MapArr[path[i][0]][path[i][1]];
+						if (point.status != start && point.status != middle && point.status != end && point.status != mix) {
+							point.setStatus(status);
+						}
+					}, (j + i) * 50);
+				}
+			}
+		}
+
+		function SetMap() {
+			let w = parseInt($("#input_width").val());
+			let h = parseInt($("#input_height").val());
+
+			map.recreateMap(h, w);
+		}
+
+		function Start() {
+			let cmdArr = [];
+
+			let result = Run(map.startPoint, map.middlePoint);
+			cmdArr.push(...result.cmdArr);
+			cmdArr.push("u");//up
+			map.showPathProcess(result.path,0, walked1);
+			result = Run(map.middlePoint, map.endPoint,result.startVec);
+			cmdArr.push(...result.cmdArr);
+			cmdArr.push("d");//down
+			map.showPathProcess(result.path,result.path.length, walked2);
+			// console.log(cmdArr);
+
+			cmdArr.push("s");//down
+
+			g_cmdArr = cmdArr;
+			g_cmdArr_index = 0;
+
+			console.log(g_cmdArr);
+
+			socket.send(g_cmdArr[g_cmdArr_index]);
+			console.log("send:", g_cmdArr[g_cmdArr_index]);
+		}
+
+		function Run(_startPoint, _endPoint, _startVec){
+
+			let grid = new PF.Grid(map.row, map.col);
+			let finder = new PF.AStarFinder();
+
+			for (let _row = 0; _row < map.row; ++_row) {
+				for (let _col = 0; _col < map.col; ++_col) {
+					if (map.MapArr[_row][_col].status === walked1 || map.MapArr[_row][_col].status === walked2) {
+						map.MapArr[_row][_col].setStatus(walkable);
+					}
+				}
+			}
+
+			for (let _row = 0; _row < map.row; ++_row) {
+				for (let _col = 0; _col < map.col; ++_col) {
+					if (map.MapArr[_row][_col].status === unwalkable) {
+						grid.setWalkableAt(_row, _col, false);
+					}
+				}
+			}
+			
+			let path = finder.findPath(_startPoint.y, _startPoint.x, _endPoint.y, _endPoint.x, grid);
+
+			let startVec = null;
+			if(_startVec){
+				startVec = _startVec;
+			}else{
+				let startdir = $("#startdir").val();
+				startdir = startdir.split(",");
+
+				startVec = [parseInt(startdir[0]), parseInt(startdir[1])];
+			}
+
+			let arr = [];
+			arr.push(startVec);
+			for(let i = 0;i<path.length-1;++i){
+				let dir = [0,0];
+				dir[1] = path[i+1][0] - path[i][0];
+				dir[0] = path[i+1][1] - path[i][1];
+				arr.push(dir);
+			}
+
+			let cmdArr = [];
+
+			for(let i = 0;i<arr.length-1;++i){
+				let lres = tryTurn("left",startVec, arr[i+1]);
+				let rres = tryTurn("right",startVec, arr[i+1]);
+
+				if(lres === 0){
+					cmdArr.push("f");//forward
+				}if(lres === 2){
+					cmdArr.push("t");//turn 180
+					if(startVec[0] !== 0){
+						startVec[0] *= -1;
+					}
+
+					if(startVec[1] !== 0){
+						startVec[1] *= -1;
+					}
+					cmdArr.push("f");//forward
+				}else if(lres === 1){
+					cmdArr.push("l");//shift left
+				}else if(rres === 1){
+					cmdArr.push("r");//shift right
+				}
+				
+
+			}
+
+			cmdArr.push("s");//stop
+
+			// console.log(cmdArr);
+
+			return {startVec:startVec,path:path,cmdArr:cmdArr};
+		}
+
+		let map = new Map();
+		
+		SetMap();
+
+		savedMap = [
+			[unwalkable, walkable, unwalkable, walkable, unwalkable, middle, unwalkable],
+			[start, walkable, walkable, walkable, walkable, walkable, walkable],
+			[unwalkable, walkable, unwalkable, walkable, unwalkable, walkable, unwalkable],
+			[walkable, walkable, walkable, walkable, walkable, walkable, walkable],
+			[unwalkable, walkable, unwalkable, walkable, unwalkable, end, unwalkable],
+		];
+
+		for (let row = 0; row < 5; ++row) {
+			for (let col = 0; col < 7; ++col) {
+				map.MapArr[row][col].setStatus(savedMap[row][col]);
+			}
+		}
+
+		function VecMatch(v1,v2){
+			if(Math.abs(v1[0] - v2[0]) < 0.01 && Math.abs(v1[1] - v2[1]) < 0.01){
+				return true;
+			}
+			return false;
+		}
+
+		function tryTurn(dir,beforeV, afterV){
+			let ang = 0;
+			if(dir === "left"){
+				ang = -Math.PI/2;
+			}else if(dir === "right"){
+				ang = Math.PI/2;
+			}else{
+				return;
+			}
+
+			let x = beforeV[0];
+			let y = beforeV[1];
+
+			let vec = [x,y];
+
+			if(VecMatch(vec,afterV)){
+				return 0;
+			}
+
+			for(let i = 0;i<4;++i){
+				vec[0] = x*Math.cos(ang)-y*Math.sin(ang);
+				vec[1] = x*Math.sin(ang)+y*Math.cos(ang);
+
+				if(VecMatch(vec,afterV)){
+					return i + 1;
+				}
+
+				x = vec[0];
+				y = vec[1];
+			}
+		}
+
+		function guardProcess(path){
+			console.log(path);
+			let startdir = $("#startdir").val();
+			startdir = startdir.split(",");
+
+			let startVec = [parseInt(startdir[0]), parseInt(startdir[1])];
+
+			let arr = [];
+			arr.push(startVec);
+			for(let i = 0;i<path.length-1;++i){
+				let dir = [0,0];
+				dir[1] = path[i+1][0] - path[i][0];
+				dir[0] = path[i+1][1] - path[i][1];
+				arr.push(dir);
+			}
+
+			let cmdArr = [];
+
+			for(let i = 0;i<arr.length-1;++i){
+				let lres = tryTurn("left",startVec, arr[i+1]);
+				let rres = tryTurn("right",startVec, arr[i+1]);
+
+				if(lres === 0){
+					cmdArr.push("f");//forward
+				}if(lres === 2){
+					cmdArr.push("t");//turn 180
+					if(startVec[0] !== 0){
+						startVec[0] *= -1;
+					}
+
+					if(startVec[1] !== 0){
+						startVec[1] *= -1;
+					}
+					cmdArr.push("f");//forward
+				}else if(lres === 1){
+					cmdArr.push("l");//shift left
+				}else if(rres === 1){
+					cmdArr.push("r");//shift right
+				}
+				
+				// if(lres<=rres){
+				// 	for(let i =0;i<lres;++i){
+				// 		cmdArr.push("turnleft");
+				// 	}
+				// }else{
+				// 	for(let i =0;i<rres;++i){
+				// 		cmdArr.push("turnright");
+				// 	}
+				// }
+				// cmdArr.push("forward");
+			}
+
+			cmdArr.push("stop");
+
+			g_cmdArr = cmdArr;
+            g_cmdArr_index = 0;
+
+            console.log(g_cmdArr);
+            
+            socket.send(g_cmdArr[g_cmdArr_index]);
+		}
+
+		resize();
+
+		let g_cmdArr_index = 0;
+        let g_cmdArr = [];
+
+		var hostname = location.hostname || "localhost";
+        var socket = new WebSocket("ws://" + hostname + ":8080/ws");
+
+        let inprocess = false;
+
+        socket.onopen = function() {
+            console.log("%cSocket open!", "color:green");
+            // socket.send("start");
+        }
+
+        socket.onmessage = function(msg) {
+            var recv_msg = msg.data;
+			if(g_cmdArr[++g_cmdArr_index]){
+				socket.send(g_cmdArr[g_cmdArr_index]);
+				console.log(recv_msg);
+				console.log("send:", g_cmdArr[g_cmdArr_index]);
+			}
+
+        }
+
+        socket.onclose = function() {
+            console.log("%cSocket Closed!", "color:red");
+        }
+
+	</script>
+
+</body>
+
+</html>
